@@ -2,8 +2,10 @@ import mongoose from 'mongoose';
 
 const roomSchema = new mongoose.Schema(
   {
-    number: { type: String, required: true, unique: true },
+    code: { type: String, required: true, unique: true },
+    name: { type: String, required: true, unique: true },
     capacity: { type: Number, required: true },
+    location: { type: String, required: true },
   },
   { timestamps: true }
 );

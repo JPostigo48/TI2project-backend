@@ -41,4 +41,24 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/create-admin', async (req, res) => {
+  try {
+    const exists = await User.findOne({ email: 'admin@unsa.edu.pe' });
+    if (exists) {
+      return res.status(400).json({ message: 'Admin já existe' });
+    }
+
+    const admin = await User.create({
+      name: 'Administrador Principal',
+      email: 'admin@unsa.edu.pe',
+      password: 'pass_test_123',
+      role: 'admin',
+    });
+
+    res.json({ message: 'Admin creado', admin });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

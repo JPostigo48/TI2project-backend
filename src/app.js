@@ -12,7 +12,8 @@ import courseRoutes from './routes/course.routes.js';
 import attendanceRoutes from './routes/attendance.routes.js';
 import gradeRoutes from './routes/grade.routes.js';
 import roomRoutes from './routes/room.routes.js';
-import labRoutes from './routes/lab.routes.js';
+import sectionRoutes from './routes/section.routes.js';
+import semesterRoutes from './routes/semester.routes.js';
 import devRoutes from './routes/dev.routes.js';
 
 // Load environment variables
@@ -40,7 +41,8 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/rooms', roomRoutes);
-app.use('/api/labs', labRoutes);
+app.use('/api/sections', sectionRoutes);
+app.use('/api/semesters', semesterRoutes);
 app.use('/api/dev', devRoutes);
 
 // Health check endpoint
