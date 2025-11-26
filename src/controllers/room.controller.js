@@ -1,3 +1,4 @@
+import Section from '../models/section.model.js';
 import Room from '../models/room.model.js';
 import RoomReservation from '../models/roomReservation.model.js';
 
@@ -31,40 +32,69 @@ export const createRoom = async (req, res) => {
 // @route   POST /api/rooms/reserve
 // @access  Private (teacher)
 export const reserveRoom = async (req, res) => {
-  const { roomId, date, startHour, duration, reason } = req.body;
-  if (!roomId || !date || !startHour || !duration) {
-    return res.status(400).json({ message: 'Missing required fields' });
+  // 1. CORRECCIÓN: Agregamos 'date' aquí para leer lo que manda el front
+  const { roomId, day, blocks, reason, date } = req.body; 
+  const teacherId = req.user.id;
+
+  // Validaciones básicas
+  if (!roomId || !day || !blocks || blocks.length === 0 || !date) {
+    return res.status(400).json({ message: "Faltan datos para la reserva." });
   }
+
   try {
-    // Convert date to a Date object
-    const dateObj = new Date(date);
-    // Check for overlapping reservations in same room and date
-    const existing = await RoomReservation.find({
-      room: roomId,
-      date: dateObj,
+    // 1. VALIDAR SI EL PROFESOR ESTÁ LIBRE
+    const teacherConflicts = await Section.find({
+      teacher: teacherId,
+      'schedule.day': day,
+      'schedule.startHour': { $in: blocks }
     });
-    const conflict = existing.some((r) => {
-      const existingStart = r.startHour;
-      const existingEnd = r.startHour + r.duration;
-      const newStart = startHour;
-      const newEnd = startHour + duration;
-      return !(existingEnd <= newStart || existingStart >= newEnd);
-    });
-    if (conflict) {
-      return res.status(400).json({ message: 'Room already reserved for that time' });
+
+    if (teacherConflicts.length > 0) {
+        return res.status(409).json({ message: "Ya tienes clase asignada en ese horario." });
     }
-    const reservation = await RoomReservation.create({
-      room: roomId,
-      teacher: req.user._id,
-      date: dateObj,
-      startHour,
-      duration,
-      reason,
+
+    // 2. VALIDAR SI EL AULA ESTÁ LIBRE (Clases Regulares)
+    const roomScheduleConflicts = await Section.find({
+        'schedule.room': roomId,
+        'schedule.day': day,
+        'schedule.startHour': { $in: blocks }
     });
-    res.status(201).json(reservation);
+
+    if (roomScheduleConflicts.length > 0) {
+        return res.status(409).json({ message: "El aula está ocupada por una clase regular." });
+    }
+
+    // 3. VALIDAR SI EL AULA ESTÁ LIBRE (Otras Reservas)
+    // CORRECCIÓN: Usamos RoomReservation en lugar de Reservation
+    const reservationConflicts = await RoomReservation.find({
+        room: roomId,
+        day: day,
+        blocks: { $in: blocks },
+        status: 'APPROVED' 
+    });
+
+    if (reservationConflicts.length > 0) {
+        return res.status(409).json({ message: "El aula ya tiene una reserva confirmada en este horario." });
+    }
+
+    // 4. CREAR RESERVA
+    // CORRECCIÓN: Usamos RoomReservation
+    const newReservation = new RoomReservation({
+        teacher: teacherId,
+        room: roomId,
+        date: new Date(date), // CORRECCIÓN: Usamos la fecha elegida, no la de hoy
+        day: day,        
+        blocks: blocks, 
+        reason,
+        status: 'APPROVED'
+    });
+
+    await newReservation.save();
+    res.json(newReservation);
+
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: "Error al procesar la reserva." });
   }
 };
 
@@ -72,12 +102,24 @@ export const reserveRoom = async (req, res) => {
 // @route   GET /api/rooms/reservations?room=roomId&date=YYYY-MM-DD
 // @access  Private (teacher or admin)
 export const listReservations = async (req, res) => {
-  const { room, date } = req.query;
-  const filter = {};
-  if (room) filter.room = room;
-  if (date) filter.date = new Date(date);
   try {
-    const reservations = await RoomReservation.find(filter).populate('room', 'number').populate('teacher', 'name');
+    const teacherId = req.user.id;
+    const { history } = req.query; 
+
+    const filter = { teacher: teacherId };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (history === 'true') {
+        filter.date = { $lt: today };
+    } else {
+        filter.date = { $gte: today };
+    }
+
+    const reservations = await RoomReservation.find(filter)
+        .populate('room', 'name code location')
+        .sort({ date: 1, 'blocks.0': 1 }); 
+
     res.json(reservations);
   } catch (error) {
     console.error(error);

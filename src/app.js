@@ -15,6 +15,8 @@ import roomRoutes from './routes/room.routes.js';
 import sectionRoutes from './routes/section.routes.js';
 import semesterRoutes from './routes/semester.routes.js';
 import studentRoutes from './routes/student.routes.js';
+import labRoutes from './routes/lab.routes.js';
+import teacherRoutes from './routes/teacher.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -26,7 +28,23 @@ const app = express();
 connectDB();
 
 // Middleware
-app.use(cors());
+
+const whitelist = [
+  'http://localhost:5173',     
+  'http://localhost:3000',     
+  'https://ti-2project-frontend.vercel.app' 
+];
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permitir peticiones sin origen (como Postman o Mobile Apps) o si está en la lista
+    if (!origin || whitelist.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true // <--- CRUCIAL: Permite el paso de Cookies/Tokens
+}));
 app.use(express.json());
 
 // Logging middleware only in development
@@ -44,6 +62,8 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/sections', sectionRoutes);
 app.use('/api/semesters', semesterRoutes);
 app.use('/api/student', studentRoutes);
+app.use('/api/lab', labRoutes);
+app.use('/api/teacher', teacherRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

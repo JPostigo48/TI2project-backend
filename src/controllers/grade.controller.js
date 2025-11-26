@@ -1,59 +1,112 @@
 import Grade from '../models/grade.model.js';
-import mongoose from 'mongoose';
+import Enrollment from '../models/enrollment.model.js';
 
-// @desc    Create or update a grade entry
-// @route   POST /api/grades
-// @access  Private (teacher)
 export const setGrade = async (req, res) => {
-  const { sectionId, studentId, evaluation, weight, score } = req.body;
-  if (!sectionId || !studentId || !evaluation) {
-    return res.status(400).json({ message: 'Missing required fields' });
-  }
+  const { section, studentId, partial, kind, value } = req.body;
+
   try {
-    const grade = await Grade.findOneAndUpdate(
-      { section: sectionId, student: studentId, evaluation },
-      { weight, score },
-      { upsert: true, new: true, runValidators: true }
+    // Validamos que el valor sea numérico o null (para borrar)
+    const valToSave = (value === '' || value === null) ? null : Number(value);
+
+    // USAMOS OPERACIÓN ATÓMICA ($set)
+    // Esto evita que si guardas continua y examen al mismo tiempo, uno borre al otro.
+    const updatedGrade = await Grade.findOneAndUpdate(
+      {
+        section: section,
+        student: studentId,
+        evaluation: partial // Ej: "P1"
+      },
+      {
+        $set: {
+          [`components.${kind}`]: valToSave, // Ej: "components.continuous": 15
+          weight: 1 
+        }
+      },
+      {
+        upsert: true, // Si no existe, lo crea
+        new: true,    // Devuelve el objeto nuevo
+        setDefaultsOnInsert: true
+      }
     );
-    res.status(201).json(grade);
+
+    res.json(updatedGrade);
+
   } catch (error) {
-    console.error(error);
-    res.status(400).json({ message: 'Invalid data' });
+    console.error("Error setGrade:", error);
+    res.status(500).json({ message: 'Error guardando nota' });
   }
 };
 
-// @desc    Get grades for a section with optional summary
-// @route   GET /api/grades?section=sectionId&summary=true
-// @access  Private (teacher or student)
+// ... Mantén tu función getGrades igual, esa estaba bien ...
 export const getGrades = async (req, res) => {
-  const { section, summary } = req.query;
-  try {
-    const filter = {};
-    if (section) filter.section = section;
-    const grades = await Grade.find(filter).populate('student', 'name code');
-    if (summary === 'true') {
-      // compute statistics per evaluation
-      const stats = {};
-      grades.forEach((g) => {
-        if (!stats[g.evaluation]) stats[g.evaluation] = { scores: [] };
-        if (typeof g.score === 'number') stats[g.evaluation].scores.push(g.score);
-        stats[g.evaluation].weight = g.weight;
-      });
-      const summaryResult = {};
-      Object.keys(stats).forEach((ev) => {
-        const scores = stats[ev].scores;
-        if (scores.length > 0) {
-          const max = Math.max(...scores);
-          const min = Math.min(...scores);
-          const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-          summaryResult[ev] = { max, min, avg, weight: stats[ev].weight };
-        }
-      });
-      return res.json({ grades, summary: summaryResult });
+    // ... (El código de getGrades que te di antes funciona bien para leer)
+    // Solo asegúrate de pegarlo aquí si lo borraste.
+    const { section } = req.query;
+
+    try {
+        if (!section) return res.status(400).json({ message: "Falta section ID" });
+
+        const enrollments = await Enrollment.find({ section })
+        .populate('student', 'name code')
+        .lean();
+
+        const grades = await Grade.find({ section }).lean();
+
+        const roster = enrollments.map(enr => {
+        const studentId = enr.student._id.toString();
+        const studentGrades = grades.filter(g => g.student.toString() === studentId);
+
+        const row = {
+            studentId: studentId,
+            studentName: enr.student.name,
+            code: enr.student.code,
+            partials: {
+            P1: { continuous: null, exam: null },
+            P2: { continuous: null, exam: null },
+            P3: { continuous: null, exam: null }
+            },
+            substitutive: null,
+            computed: { finalScore: null }
+        };
+
+        studentGrades.forEach(g => {
+            const ev = g.evaluation;
+            if (row.partials[ev] && g.components) {
+                row.partials[ev].continuous = g.components.continuous;
+                row.partials[ev].exam = g.components.exam;
+            }
+            if (ev === 'SUB') {
+                row.substitutive = g.components ? g.components.value : null;
+            }
+        });
+
+        let sum = 0;
+        let count = 0;
+        ['P1', 'P2', 'P3'].forEach(p => {
+            const c = row.partials[p].continuous;
+            const e = row.partials[p].exam;
+            
+            if (c != null && e != null) {
+                const partialScore = (c + e) / 2; 
+                sum += partialScore;
+                count++;
+            } else if (c != null || e != null) {
+                // Si falta una nota, asumimos 0 en la faltante para el promedio temporal
+                const partialScore = ((c||0) + (e||0)) / 2;
+                sum += partialScore;
+                count++;
+            }
+        });
+        
+        row.computed.finalScore = count > 0 ? (sum / 3) : null;
+
+        return row;
+        });
+
+        res.json(roster);
+
+    } catch (error) {
+        console.error("GetGrades Error:", error);
+        res.status(500).json({ message: 'Server error fetching grades' });
     }
-    res.json({ grades });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
 };

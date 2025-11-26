@@ -8,31 +8,15 @@ import Section from '../src/models/section.model.js';
 import Room from '../src/models/room.model.js';
 import Semester from '../src/models/semester.model.js';
 
-// Cargar variables de entorno
 dotenv.config();
 
 const seedDatabase = async () => {
     try {
         console.log('🔌 Conectando a MongoDB...');
-        // Asegúrate de que tu .env tenga MONGO_URI
         await mongoose.connect(process.env.MONGO_URI);
         
         console.log('🧹 Limpiando colecciones...');
-        await User.deleteMany({});
-        await Course.deleteMany({});
-        await Section.deleteMany({});
-        await Room.deleteMany({});
-        await Semester.deleteMany({});
-        
-        // Intento de limpiar Enrollment de forma dinámica si existe
-        try {
-             // Importación dinámica para evitar error si el archivo no existe aún
-            const enrollmentModule = await import('../src/models/enrollment.model.js');
-            const Enrollment = enrollmentModule.default;
-            await Enrollment.deleteMany({});
-        } catch (e) {
-            // Si falla, asumimos que no existe el modelo y seguimos
-        }
+        await mongoose.connection.dropDatabase();
 
         // ----------------------------------------------------
         // 1. SEMESTRE
@@ -46,15 +30,16 @@ const seedDatabase = async () => {
         console.log('✅ Semestre creado');
 
         // ----------------------------------------------------
-        // 2. AULAS (Tus datos)
+        // 2. AULAS 
         // ----------------------------------------------------
         const aula201 = await Room.create({ code: "A-201", name: "Aula 201", capacity: 30, location: "Piso 2" });
         const aula203 = await Room.create({ code: "A-203", name: "Aula 203", capacity: 32, location: "Piso 2" });
         const lab1 = await Room.create({ code: "L-1", name: "Laboratorio 1", capacity: 20, location: "Piso 1", type: "lab" });
+        const lab2 = await Room.create({ code: "L-2", name: "Laboratorio 2", capacity: 24, location: "Piso 1", type: "lab" });
         console.log('✅ Aulas creadas');
 
         // ----------------------------------------------------
-        // 3. USUARIOS (Con password hasheado)
+        // 3. USUARIOS 
         // ----------------------------------------------------
         const salt = await bcrypt.genSalt(10);
         // const passwordHash = await bcrypt.hash('pass_test_123', salt); 
@@ -64,9 +49,12 @@ const seedDatabase = async () => {
             name: "Administrador Principal", email: "admin@unsa.edu.pe", password: passwordHash, role: "admin", active: true
         });
 
-        // NOTA: Verifica que tu modelo User acepte 'code' para docentes si lo usas en el front
         const docente = await User.create({
             name: "Docente de Prueba", code: "D-001", email: "docente_test@unsa.edu.pe", password: passwordHash, role: "teacher", active: true
+        });
+
+        const docente2 = await User.create({
+            name: "Docente de Prueba 2", code: "D-002", email: "docente_test_2@unsa.edu.pe", password: passwordHash, role: "teacher", active: true
         });
 
         const alumno = await User.create({
@@ -84,7 +72,12 @@ const seedDatabase = async () => {
         
         const cursoTI = await Course.create({
             name: "Trabajo Interdisciplinar II", code: "1703240", credits: 3, year: 3, semester: 6,
-            hoursPerWeek: 4, theoryHours: 4, labHours: 0
+            hoursPerWeek: 2, theoryHours: 2, labHours: 0
+        });
+        
+        const cursoMAC = await Course.create({
+            name: "Matemática Aplicada a la Computación", code: "1703241", credits: 4, year: 3, semester: 6,
+            hoursPerWeek: 6, theoryHours: 4, labHours: 2
         });
         console.log('✅ Cursos base creados');
 
@@ -92,7 +85,7 @@ const seedDatabase = async () => {
         // 5. SECCIONES (Instancias del Semestre)
         // ----------------------------------------------------
         
-        // --- A. Teoría de SO (Donde el alumno YA está matriculado) ---
+        // --- Teoría ---
         const seccionTeoriaSO = await Section.create({
             course: cursoSO._id,
             semester: semestre._id,
@@ -102,36 +95,115 @@ const seedDatabase = async () => {
             capacity: 30,
             enrolledCount: 1, 
             schedule: [
-                { day: "Monday", startHour: 8, duration: 2, room: aula203._id }, // Lunes 8-10
-                { day: "Wednesday", startHour: 8, duration: 2, room: aula203._id } // Miercoles 8-10
+                { day: "Monday", startHour: 7, duration: 2, room: aula203._id }, 
+                { day: "Wednesday", startHour: 5, duration: 2, room: aula203._id } 
+            ]
+        });
+        const seccionTeoriaSOB = await Section.create({
+            course: cursoSO._id,
+            semester: semestre._id,
+            type: "theory",
+            group: "B",
+            teacher: docente2._id,
+            capacity: 30,
+            enrolledCount: 1, 
+            schedule: [
+                { day: "Wednesday", startHour: 11, duration: 2, room: aula203._id },
+                { day: "Friday", startHour: 11, duration: 2, room: aula203._id }
             ]
         });
 
-        // --- B. Laboratorios de SO (Para que el alumno elija) ---
+        const seccionTeoriaTIA = await Section.create({
+            course: cursoTI._id,
+            semester: semestre._id,
+            type: "theory",
+            group: "A",
+            teacher: docente._id,
+            capacity: 28,
+            enrolledCount: 1, 
+            schedule: [
+                { day: "Wednesday", startHour: 1, duration: 2, room: aula203._id }
+            ]
+        });
+
+        const seccionTeoriaTIB = await Section.create({
+            course: cursoTI._id,
+            semester: semestre._id,
+            type: "theory",
+            group: "B",
+            teacher: docente._id,
+            capacity: 28,
+            enrolledCount: 1, 
+            schedule: [
+                { day: "Thursday", startHour: 3, duration: 2, room: aula203._id }
+            ]
+        });
+
+        const seccionTeoriaMAC = await Section.create({
+            course: cursoMAC._id,
+            semester: semestre._id,
+            type: "theory",
+            group: "A",
+            teacher: docente._id,
+            capacity: 32,
+            enrolledCount: 1, 
+            schedule: [
+                { day: "Monday", startHour: 1, duration: 2, room: aula203._id },
+                { day: "Tuesday", startHour: 4, duration: 2, room: aula203._id }
+            ]
+        });
+
+        // --- Laboratorios ---
         
-        const seccionLabA = await Section.create({
+        const seccionSOLabA = await Section.create({
             course: cursoSO._id,
             semester: semestre._id,
             type: "lab",
             group: "A", 
-            teacher: docente._id,
+            teacher: docente2._id,
             capacity: 20,
             enrolledCount: 0,
             schedule: [
-                { day: "Tuesday", startHour: 8, duration: 2, room: lab1._id } // Martes 8-10
+                { day: "Tuesday", startHour: 7, duration: 2, room: lab1._id } // Martes 8-10
             ]
         });
 
-        const seccionLabB = await Section.create({
+        const seccionSOLabB = await Section.create({
             course: cursoSO._id,
             semester: semestre._id,
             type: "lab",
             group: "B", 
-            teacher: docente._id,
+            teacher: docente2._id,
             capacity: 20,
             enrolledCount: 0,
             schedule: [
-                { day: "Tuesday", startHour: 10, duration: 2, room: lab1._id } // Martes 10-12
+                { day: "Tuesday", startHour: 9, duration: 2, room: lab1._id } // Martes 10-12
+            ]
+        });
+
+        const seccionMACLabA = await Section.create({
+            course: cursoMAC._id,
+            semester: semestre._id,
+            type: "lab",
+            group: "A", 
+            teacher: docente._id,
+            capacity: 24,
+            enrolledCount: 0,
+            schedule: [
+                { day: "Friday", startHour: 3, duration: 2, room: lab2._id }
+            ]
+        });
+
+        const seccionMACLabB = await Section.create({
+            course: cursoMAC._id,
+            semester: semestre._id,
+            type: "lab",
+            group: "B", 
+            teacher: docente._id,
+            capacity: 24,
+            enrolledCount: 0,
+            schedule: [
+                { day: "Tuesday", startHour: 11, duration: 2, room: lab2._id }
             ]
         });
 
@@ -146,12 +218,28 @@ const seedDatabase = async () => {
             
             await Enrollment.create({
                 student: alumno._id,
-                section: seccionTeoriaSO._id, 
+                section: seccionTeoriaSOB._id, 
                 semester: semestre._id,
                 status: 'enrolled',
                 labPreferences: []
             });
-            console.log('✅ Alumno matriculado en Teoría SO (Enrollment creado)');
+            
+            await Enrollment.create({
+                student: alumno._id,
+                section: seccionTeoriaTIA._id, 
+                semester: semestre._id,
+                status: 'enrolled',
+                labPreferences: []
+            });
+            
+            await Enrollment.create({
+                student: alumno._id,
+                section: seccionTeoriaMAC._id, 
+                semester: semestre._id,
+                status: 'enrolled',
+                labPreferences: []
+            });
+            console.log('✅ Alumno matriculado');
         } catch (e) {
             console.log('⚠️ Modelo Enrollment no encontrado o error al crear. Se omitió este paso.'+e);
         }
