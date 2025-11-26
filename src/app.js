@@ -33,7 +33,7 @@ const whitelist = [
   'http://localhost:5173',     
   'http://localhost:3000',     
   'https://ti-2project-frontend.vercel.app',
-  'https://sistema-academico-sooty.vercel.app/'
+  ''
 ];
 app.use(cors({
   origin: whitelist,
