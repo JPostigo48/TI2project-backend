@@ -14,6 +14,7 @@ import gradeRoutes from './routes/grade.routes.js';
 import roomRoutes from './routes/room.routes.js';
 import sectionRoutes from './routes/section.routes.js';
 import semesterRoutes from './routes/semester.routes.js';
+import studentRoutes from './routes/student.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -42,6 +43,7 @@ app.use('/api/grades', gradeRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/sections', sectionRoutes);
 app.use('/api/semesters', semesterRoutes);
+app.use('/api/student', studentRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
