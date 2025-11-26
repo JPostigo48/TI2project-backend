@@ -35,15 +35,9 @@ const whitelist = [
   'https://ti-2project-frontend.vercel.app' 
 ];
 app.use(cors({
-  origin: function (origin, callback) {
-    // Permitir peticiones sin origen (como Postman o Mobile Apps) o si está en la lista
-    if (!origin || whitelist.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true // <--- CRUCIAL: Permite el paso de Cookies/Tokens
+  origin: whitelist,
+  credentials: true,
+  allowedHeaders: ["Content-Type","Authorization"]
 }));
 app.use(express.json());
 
