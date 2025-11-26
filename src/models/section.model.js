@@ -12,8 +12,8 @@ const sectionSchema = new mongoose.Schema(
     schedule: [
       {
         day: { type: String }, // Monday, Tuesday, etc.
-        startHour: { type: Number }, // 1-15 per requirement
-        duration: { type: Number }, // number of hours consecutively
+        startHour: { type: Number }, // 1-15 
+        duration: { type: Number }, // cantidad de horas consecutivas
         room: { type: Schema.Types.ObjectId, ref: 'Room' },
       },
     ],

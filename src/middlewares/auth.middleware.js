@@ -26,14 +26,13 @@ export const protect = async (req, res, next) => {
   }
 };
 
-// Middleware to restrict routes to specific roles
 export const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ message: 'Unauthorized' });
+      return res.status(401).json({ message: 'Sin autorización' });
     }
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ message: 'Forbidden: insufficient role' });
+      return res.status(403).json({ message: 'Rol no especificado' });
     }
     next();
   };
