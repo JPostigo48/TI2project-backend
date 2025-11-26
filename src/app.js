@@ -32,7 +32,7 @@ connectDB();
 const whitelist = [
   'http://localhost:5173',     
   'https://ti-2project-frontend.vercel.app',
-  'https://sistema-academico-sooty.vercel.app/'
+  'https://sistema-academico-sooty.vercel.app'
 ];
 app.use(cors({
   origin: whitelist,
