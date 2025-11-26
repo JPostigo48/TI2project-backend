@@ -39,12 +39,15 @@ export const setGrade = async (req, res) => {
 
 // ... Mantén tu función getGrades igual, esa estaba bien ...
 export const getGrades = async (req, res) => {
-    // ... (El código de getGrades que te di antes funciona bien para leer)
-    // Solo asegúrate de pegarlo aquí si lo borraste.
-    const { section } = req.query;
+    const { section, studentId, mode } = req.query; // Agregamos studentId
 
     try {
-        if (!section) return res.status(400).json({ message: "Falta section ID" });
+        // VALIDACIÓN: Se requiere section O studentId
+        if (!section && !studentId) {
+            return res.status(400).json({ message: "Faltan parámetros (section o studentId)" });
+        }
+
+        if (section) {
 
         const enrollments = await Enrollment.find({ section })
         .populate('student', 'name code')
@@ -104,6 +107,64 @@ export const getGrades = async (req, res) => {
         });
 
         res.json(roster);
+      }
+
+      if (studentId) {
+        // 1. Buscar todas las notas de ese estudiante
+        const grades = await Grade.find({ student: studentId })
+            .populate({
+                path: 'section',
+                populate: { path: 'course', select: 'name code' } // Traer info del curso
+            })
+            .lean();
+
+        // 2. Agrupar por curso/sección
+        const gradesBySection = {};
+
+        grades.forEach(g => {
+            if (!g.section) return;
+            const sectionId = g.section._id.toString();
+            
+            if (!gradesBySection[sectionId]) {
+                gradesBySection[sectionId] = {
+                    courseCode: g.section.course?.code,
+                    courseName: g.section.course?.name,
+                    group: g.section.group,
+                    partials: { P1:{}, P2:{}, P3:{} },
+                    substitutive: null,
+                    computed: { finalScore: 0 }
+                };
+            }
+
+            const record = gradesBySection[sectionId];
+            const ev = g.evaluation;
+
+            if (record.partials[ev] && g.components) {
+                record.partials[ev] = g.components;
+            }
+            if (ev === 'SUB') {
+                record.substitutive = g.components?.value;
+            }
+        });
+
+        // 3. Calcular promedios (Opcional, si no se guardan calculados)
+        const results = Object.values(gradesBySection).map(record => {
+            let sum = 0; 
+            let count = 0;
+            ['P1', 'P2', 'P3'].forEach(p => {
+                const c = record.partials[p].continuous;
+                const e = record.partials[p].exam;
+                if (c != null || e != null) {
+                    sum += ((c||0) + (e||0)) / 2;
+                    count++;
+                }
+            });
+            record.computed.finalScore = count > 0 ? sum / 3 : 0;
+            return record;
+        });
+
+        return res.json(results);
+    }
 
     } catch (error) {
         console.error("GetGrades Error:", error);
