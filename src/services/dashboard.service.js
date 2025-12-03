@@ -1,8 +1,6 @@
 import Enrollment from '../models/enrollment.model.js';
-// No necesitas importar Section o Course aquí si solo usas los datos poblados del enrollment
 
 export const getStudentDashboardData = async (studentId) => {
-    // 1. Obtener la data cruda de la BD
     const enrollments = await Enrollment.find({ student: studentId })
         .populate({
             path: 'section',
@@ -16,16 +14,14 @@ export const getStudentDashboardData = async (studentId) => {
         };
     }
 
-    // 2. Lógica del Promedio (Separada y limpia)
     const stats = calculateStats(enrollments);
 
-    // 3. Lógica de la Próxima Clase (Separada)
     const nextClass = findNextClass(enrollments);
 
     return { stats, nextClass };
 };
 
-// --- Funciones Helpers (Privadas del archivo para no ensuciar) ---
+// --- Funciones Helpers ---
 
 const calculateStats = (enrollments) => {
     let totalGrades = 0;

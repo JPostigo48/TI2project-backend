@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
-    code: { type: String }, // optional code for students/teachers
+    code: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true },
     password: { type: String, required: true },
     role: {

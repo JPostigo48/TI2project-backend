@@ -126,3 +126,92 @@ export const listReservations = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+// @desc    Obtener el horario completo de un aula (clases + reservas)
+// @route   GET /api/rooms/:id/schedule
+// @access  Private (admin, secretary, teacher, student)
+export const getRoomSchedule = async (req, res) => {
+  const roomId = req.params.id;
+
+  try {
+    // 1. Verificar que el aula exista
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Aula no encontrada' });
+    }
+
+    // 2. Bloques provenientes de SECTIONS (clases regulares)
+    const sections = await Section.find({ 'schedule.room': roomId })
+      .populate('course', 'name code')
+      .populate('teacher', 'name');
+
+    const sectionBlocks = [];
+    sections.forEach((section) => {
+      section.schedule.forEach((slot) => {
+        if (!slot.room || slot.room.toString() !== roomId) return;
+
+        sectionBlocks.push({
+          source: 'section',
+          type: section.type || 'theory', // 'theory' | 'lab'
+          day: slot.day,                  // 'Monday', 'Tuesday', etc.
+          startHour: slot.startHour,      // 1–15
+          duration: slot.duration || 1,
+          room: {
+            _id: room._id,
+            name: room.name,
+            code: room.code,
+          },
+          courseName: section.course?.name || 'Curso',
+          courseCode: section.course?.code || '',
+          group: section.group || null,
+          teacher: section.teacher
+            ? { _id: section.teacher._id, name: section.teacher.name }
+            : null,
+        });
+      });
+    });
+
+    // 3. Bloques provenientes de RESERVAS
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const reservations = await RoomReservation.find({
+      room: roomId,
+      status: 'APPROVED',
+      date: { $gte: today },
+    }).populate('teacher', 'name');
+
+    const reservationBlocks = [];
+    reservations.forEach((resv) => {
+      // Cada bloque es una hora académica (1,2,3,...)
+      (resv.blocks || []).forEach((blockHour) => {
+        reservationBlocks.push({
+          source: 'reservation',
+          type: 'reservation',
+          day: resv.day,           // 'Monday', ...
+          startHour: blockHour,    // número de hora
+          duration: 1,
+          room: {
+            _id: room._id,
+            name: room.name,
+            code: room.code,
+          },
+          courseName: resv.reason || 'Reserva de aula',
+          courseCode: '',
+          group: null,
+          teacher: resv.teacher
+            ? { _id: resv.teacher._id, name: resv.teacher.name }
+            : null,
+        });
+      });
+    });
+
+    // 4. Unimos todo en un solo arreglo de bloques
+    const blocks = [...sectionBlocks, ...reservationBlocks];
+
+    return res.json(blocks);
+  } catch (error) {
+    console.error('Error en getRoomSchedule:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};

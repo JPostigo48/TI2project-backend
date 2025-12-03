@@ -1,7 +1,5 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import bcrypt from 'bcryptjs';
-
 import User from '../src/models/user.model.js'; 
 import Course from '../src/models/course.model.js';
 import Section from '../src/models/section.model.js'; 
@@ -41,8 +39,6 @@ const seedDatabase = async () => {
         // ----------------------------------------------------
         // 3. USUARIOS 
         // ----------------------------------------------------
-        const salt = await bcrypt.genSalt(10);
-        // const passwordHash = await bcrypt.hash('pass_test_123', salt); 
         const passwordHash = 'pass_test_123'; 
 
         const admin = await User.create({
