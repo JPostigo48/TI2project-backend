@@ -68,7 +68,10 @@ export const getCourseSections = async (req, res) => {
     const { semester } = req.query;
     const filter = { course: req.params.id };
     if (semester) filter.semester = semester;
-    const sections = await Section.find(filter).populate('teacher', 'name email');
+    const sections = await Section.find(filter).populate('teacher', 'name email').populate({
+      path: 'schedule.room',
+      select: 'code name capacity location type',
+    });
     res.json(sections);
   } catch (error) {
     console.error(error);

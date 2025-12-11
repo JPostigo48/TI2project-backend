@@ -3,9 +3,9 @@ import mongoose from 'mongoose';
 const roomSchema = new mongoose.Schema(
   {
     code: { type: String, required: true, unique: true }, // Ej: "A-101"
-    name: { type: String, required: true }, // Ej: "Aula Magna"
+    name: { type: String, required: true }, // Ej: "Aula 101"
     capacity: { type: Number, required: true },
-    location: { type: String, required: true }, // Ej: "Pabellón B"
+    location: { type: String, required: true }, // Ej: "Piso 2"
     type: { 
         type: String, 
         enum: ['theory', 'lab', 'auditorium'], 

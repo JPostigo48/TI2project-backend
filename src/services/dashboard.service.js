@@ -4,7 +4,7 @@ export const getStudentDashboardData = async (studentId) => {
     const enrollments = await Enrollment.find({ student: studentId })
         .populate({
             path: 'section',
-            populate: { path: 'course' } // Traemos el nombre del curso
+            populate: { path: 'course' }
         });
 
     if (!enrollments.length) {
@@ -28,7 +28,6 @@ const calculateStats = (enrollments) => {
     let countGrades = 0;
 
     enrollments.forEach(enr => {
-        // Asumiendo que finalGrade existe y es número
         if (enr.finalGrade !== undefined && enr.finalGrade !== null) {
             totalGrades += enr.finalGrade;
             countGrades++;
@@ -51,20 +50,16 @@ const findNextClass = (enrollments) => {
     let minDiff = Infinity;
 
     enrollments.forEach(enr => {
-        // Validamos que exista sección y horario
         if (!enr.section || !enr.section.schedule) return;
 
         enr.section.schedule.forEach(slot => {
             const slotDayIndex = daysMap[slot.day];
             
-            // Lógica de "cuánto falta para la clase"
             let dayDiff = slotDayIndex - currentDay;
-            // Si es hoy pero ya pasó la hora, o si es un día anterior, sumamos 7 días (semana siguiente)
             if (dayDiff < 0 || (dayDiff === 0 && slot.startHour <= currentHour)) {
                 dayDiff += 7; 
             }
 
-            // Puntaje de tiempo: (Días de espera * 24) + Horas de espera hoy
             const timeScore = (dayDiff * 24) + (slot.startHour - currentHour);
 
             if (timeScore < minDiff) {
@@ -73,7 +68,7 @@ const findNextClass = (enrollments) => {
                     courseName: enr.section.course ? enr.section.course.name : "Curso Desconocido",
                     type: enr.section.type === 'theory' ? 'Teoría' : 'Laboratorio',
                     room: slot.room ? slot.room.code : 'Virtual', 
-                    day: translateDay(slot.day), // Un detalle bonito para el front (Español)
+                    day: translateDay(slot.day), 
                     time: `${slot.startHour}:00 - ${slot.startHour + slot.duration}:00`
                 };
             }
