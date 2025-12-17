@@ -55,7 +55,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/grades', gradeRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/sections', sectionRoutes);
-app.use('/api/semesters', semesterRoutes);
+app.use('/api/semester', semesterRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/lab', labRoutes);
 app.use('/api/teacher', teacherRoutes);

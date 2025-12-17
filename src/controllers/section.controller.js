@@ -1,4 +1,5 @@
 import Section from '../models/section.model.js';
+import User from '../models/user.model.js';
 import Enrollment from '../models/enrollment.model.js';
 
 /**
@@ -57,11 +58,6 @@ export const createSection = async (req, res) => {
   }
 };
 
-/**
- * @desc    List sections (theory or lab) with filters
- * @route   GET /api/sections?course=&semester=&type=&teacher=
- * @access  Private
- */
 export const listSections = async (req, res) => {
   const { course, semester, type, teacher } = req.query;
   const filter = {};
@@ -84,3 +80,70 @@ export const listSections = async (req, res) => {
   }
 };
 
+export const editSection = async (req, res) => {
+  const { sectionId } = req.params;
+
+  const {
+    type,
+    group,
+    capacity,
+    teacher,
+    schedule,
+  } = req.body;
+
+  try {
+    // 1. Verificar que la sección exista
+    const section = await Section.findById(sectionId);
+    if (!section) {
+      return res.status(404).json({ message: "Section not found." });
+    }
+
+    // 2. Validaciones de valores simples
+    if (group && typeof group !== "string") {
+      return res.status(400).json({ message: "Group must be a string." });
+    }
+
+    if (capacity !== undefined && capacity < 0) {
+      return res.status(400).json({ message: "Capacity cannot be negative." });
+    }
+
+    // 3. Validar que el teacher exista y tenga rol teacher
+    if (teacher) {
+      const teacherExists = await User.findOne({ _id: teacher, role: "teacher" });
+
+      if (!teacherExists) {
+        return res.status(400).json({
+          message: "Assigned teacher does not exist or is not a teacher.",
+        });
+      }
+    }
+
+    // 4. Construir objeto de actualización
+    const updates = {};
+
+    if (type !== undefined) updates.type = type;
+    if (group !== undefined) updates.group = group.trim();
+    if (capacity !== undefined) updates.capacity = Number(capacity);
+    if (teacher !== undefined) updates.teacher = teacher || null; // null si se quiere desasignar
+    if (schedule !== undefined) updates.schedule = schedule;
+
+    // 5. Guardar cambios
+    const updatedSection = await Section.findByIdAndUpdate(
+      sectionId,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    return res.json({
+      message: "Section updated successfully",
+      section: updatedSection,
+    });
+
+  } catch (err) {
+    console.error("Error editing section:", err);
+    return res.status(500).json({
+      message: "Error updating section",
+      error: err.message,
+    });
+  }
+};

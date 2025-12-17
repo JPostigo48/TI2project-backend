@@ -19,10 +19,16 @@ const seedDatabase = async () => {
         // ----------------------------------------------------
         // 1. SEMESTRE
         // ----------------------------------------------------
+        const semestre_anterior = await Semester.create({
+            name: "2025-A",
+            startDate: new Date("2025-04-15"), 
+            endDate: new Date("2025-07-29"),
+            isActive: false
+        });
         const semestre = await Semester.create({
             name: "2025-B",
             startDate: new Date("2025-08-15"), 
-            endDate: new Date("2025-12-15"),
+            endDate: new Date("2025-12-19"),
             isActive: true
         });
         console.log('✅ Semestre creado');
@@ -42,7 +48,7 @@ const seedDatabase = async () => {
         const passwordHash = 'pass_test_123'; 
 
         const admin = await User.create({
-            name: "Administrador Principal", email: "admin@unsa.edu.pe", password: passwordHash, role: "admin", active: true
+            name: "Administrador Principal", email: "admin@unsa.edu.pe", password: passwordHash, role: "admin", active: true, code:"A-001"
         });
 
         const docente = await User.create({
@@ -75,6 +81,12 @@ const seedDatabase = async () => {
             name: "Matemática Aplicada a la Computación", code: "1703241", credits: 4, year: 3, semester: 6,
             hoursPerWeek: 6, theoryHours: 4, labHours: 2
         });
+        
+        const cursoISII = await Course.create({
+            name: "Ingeniería de Software II", code: "1703237", credits: 4, year: 3, semester: 6,
+            hoursPerWeek: 6, theoryHours: 4, labHours: 2
+        });
+
         console.log('✅ Cursos base creados');
 
         // ----------------------------------------------------
@@ -89,7 +101,7 @@ const seedDatabase = async () => {
             group: "A",
             teacher: docente._id,
             capacity: 30,
-            enrolledCount: 1, 
+            enrolledCount: 0, 
             schedule: [
                 { day: "Monday", startHour: 7, duration: 2, room: aula203._id }, 
                 { day: "Wednesday", startHour: 5, duration: 2, room: aula203._id } 
@@ -102,7 +114,7 @@ const seedDatabase = async () => {
             group: "B",
             teacher: docente2._id,
             capacity: 30,
-            enrolledCount: 1, 
+            enrolledCount: 0, 
             schedule: [
                 { day: "Wednesday", startHour: 11, duration: 2, room: aula203._id },
                 { day: "Friday", startHour: 11, duration: 2, room: aula203._id }
@@ -116,7 +128,7 @@ const seedDatabase = async () => {
             group: "A",
             teacher: docente._id,
             capacity: 28,
-            enrolledCount: 1, 
+            enrolledCount: 0, 
             schedule: [
                 { day: "Wednesday", startHour: 1, duration: 2, room: aula203._id }
             ]
@@ -129,7 +141,7 @@ const seedDatabase = async () => {
             group: "B",
             teacher: docente._id,
             capacity: 28,
-            enrolledCount: 1, 
+            enrolledCount: 0, 
             schedule: [
                 { day: "Thursday", startHour: 3, duration: 2, room: aula203._id }
             ]
@@ -142,10 +154,24 @@ const seedDatabase = async () => {
             group: "A",
             teacher: docente._id,
             capacity: 32,
-            enrolledCount: 1, 
+            enrolledCount: 0, 
             schedule: [
                 { day: "Monday", startHour: 1, duration: 2, room: aula203._id },
                 { day: "Tuesday", startHour: 4, duration: 2, room: aula203._id }
+            ]
+        });
+
+        const seccionTeoriaISII = await Section.create({
+            course: cursoISII._id,
+            semester: semestre._id,
+            type: "theory",
+            group: "A",
+            teacher: docente._id,
+            capacity: 32,
+            enrolledCount: 0, 
+            schedule: [
+                { day: "Monday", startHour: 3, duration: 2, room: aula203._id },
+                { day: "Thursday", startHour: 1, duration: 2, room: aula203._id }
             ]
         });
 
@@ -203,6 +229,58 @@ const seedDatabase = async () => {
             ]
         });
 
+        const seccionMACLabC = await Section.create({
+            course: cursoMAC._id,
+            semester: semestre._id,
+            type: "lab",
+            group: "C", 
+            teacher: docente2._id,
+            capacity: 20,
+            enrolledCount: 0,
+            schedule: [
+                { day: "Wednesday", startHour: 11, duration: 2, room: aula203._id },
+            ]
+        });
+
+        const seccionISIILabA = await Section.create({
+            course: cursoISII._id,
+            semester: semestre._id,
+            type: "lab",
+            group: "A", 
+            teacher: docente2._id,
+            capacity: 20,
+            enrolledCount: 0,
+            schedule: [
+                { day: "Monday", startHour: 1, duration: 2, room: aula203._id },
+            ]
+        });
+
+        const seccionISIILabB = await Section.create({
+            course: cursoISII._id,
+            semester: semestre._id,
+            type: "lab",
+            group: "B", 
+            teacher: docente2._id,
+            capacity: 20,
+            enrolledCount: 0,
+            schedule: [
+                { day: "Wednesday", startHour: 1, duration: 2, room: aula203._id },
+            ]
+        });
+
+        const seccionISIILabC = await Section.create({
+            course: cursoISII._id,
+            semester: semestre._id,
+            type: "lab",
+            group: "C", 
+            teacher: docente2._id,
+            capacity: 20,
+            enrolledCount: 0,
+            schedule: [
+                { day: "Friday", startHour: 1, duration: 2, room: aula203._id },
+            ]
+        });
+
         console.log('✅ Secciones creadas');
 
         // ----------------------------------------------------
@@ -235,6 +313,15 @@ const seedDatabase = async () => {
                 status: 'enrolled',
                 labPreferences: []
             });
+            
+            await Enrollment.create({
+                student: alumno._id,
+                section: seccionTeoriaISII._id, 
+                semester: semestre._id,
+                status: 'enrolled',
+                labPreferences: []
+            });
+
             console.log('✅ Alumno matriculado');
         } catch (e) {
             console.log('⚠️ Modelo Enrollment no encontrado o error al crear. Se omitió este paso.'+e);

@@ -1,14 +1,6 @@
 import User from '../models/user.model.js';
 import Course from '../models/course.model.js';
 
-/**
- * @desc Obtiene estadísticas para el dashboard de administrador.
- * Devuelve conteos de alumnos activos, docentes activos y cursos existentes.
- * En el futuro se podrían incluir más métricas como sesiones activas o
- * frecuencia de uso.
- * @route GET /api/admin/dashboard
- * @access Privado (solo admin)
- */
 export const getDashboardStats = async (req, res) => {
   try {
     const [activeStudents, activeTeachers, courses] = await Promise.all([

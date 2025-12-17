@@ -9,7 +9,7 @@ router.use(protect);
 // Teachers: open new attendance session
 router.post('/', authorize('teacher'), openSession);
 
-// Teachers: mark attendance for a student
+// Teachers: mark attendance for a student -> cambiar
 router.patch('/:sessionId/entry/:studentId', authorize('teacher'), markAttendance);
 
 // List sessions (teacher or student)

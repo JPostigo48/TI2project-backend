@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "seed:demo": "node scripts/seed-demo.js"
+    "seed": "node scripts/seed-demo.js"
   },
   "keywords": [
     "express",
