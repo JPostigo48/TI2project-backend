@@ -65,6 +65,8 @@ export const getMyCourses = async (req, res) => {
   try {
     const studentId = req.user._id;
 
+    console.log("hola")
+
     // Semestre activo (mismo criterio que vienes usando)
     const now = new Date();
     const activeSemester = await Semester.findOne({
@@ -73,6 +75,8 @@ export const getMyCourses = async (req, res) => {
     });
 
     if (!activeSemester) return res.json([]);
+
+    console.log("hola2")
 
     const enrollments = await Enrollment.find({
       student: studentId,
@@ -114,6 +118,8 @@ export const getMyCourses = async (req, res) => {
         });
       }
     }
+
+    console.log(rray.from(map.values()))
 
     return res.json(Array.from(map.values()));
   } catch (err) {
