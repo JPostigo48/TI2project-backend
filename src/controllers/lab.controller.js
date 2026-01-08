@@ -86,42 +86,94 @@ export const listLabGroups = async (req, res) => {
       });
     }
 
-    const labEnrollmentStatus =
-      semesterDoc?.labEnrollment?.status || 'not_started';
-
+    const labEnrollmentStatus = semesterDoc?.labEnrollment?.status || 'not_started';
     const labEnrollmentWindow = {
       opensAt: semesterDoc?.labEnrollment?.openedAt || null,
       closesAt: semesterDoc?.labEnrollment?.closedAt || null,
     };
 
-    // 2) Construir horario del estudiante (solo secciones de teoría)
-    let studentSchedule = [];
-    if (semesterDoc) {
-      const enrollments = await Enrollment.find({
-        student: userId,
-        semester: semesterDoc._id,
-      }).populate({
-        path: 'section',
-        select: 'type schedule',
+    // Si no hay semestre relevante, devolvemos vacío (no tiene sentido listar labs)
+    if (!semesterDoc?._id) {
+      return res.json({
+        labEnrollmentStatus: 'not_started',
+        labEnrollmentWindow,
+        labGroups: [],
+        studentSchedule: [],
+        enrolledCourseIds: [],
       });
+    }
 
-      enrollments.forEach((enr) => {
-        if (!enr.section || enr.section.type !== 'theory') return;
-        (enr.section.schedule || []).forEach((slot) => {
-          studentSchedule.push({
-            day: slot.day,
-            startHour: slot.startHour,
-            duration: slot.duration || 1,
-          });
+    // 2) Matrículas del alumno EN ESE SEMESTRE:
+    //    - construimos su horario (solo teoría)
+    //    - construimos courseIds (solo teoría) para filtrar labs
+    const enrollments = await Enrollment.find({
+      student: userId,
+      semester: semesterDoc._id,
+    })
+      .populate({
+        path: 'section',
+        select: 'type schedule course',
+        populate: { path: 'course', select: '_id code name' },
+      })
+      .lean();
+
+    const studentSchedule = [];
+    const enrolledCourseIdsSet = new Set();
+
+    for (const enr of enrollments) {
+      const sec = enr.section;
+      if (!sec || sec.type !== 'theory') continue;
+
+      // courseIds que realmente lleva el alumno (teoría)
+      const cId = sec.course?._id || sec.course;
+      if (cId) enrolledCourseIdsSet.add(String(cId));
+
+      // horario de teoría para cruces
+      (sec.schedule || []).forEach((slot) => {
+        studentSchedule.push({
+          day: slot.day,
+          startHour: slot.startHour,
+          duration: slot.duration || 1,
         });
       });
     }
 
-    // 3) Obtener grupos de laboratorio
-    const filter = { type: 'lab' };
-    if (course) filter.course = course;
-    if (semesterDoc?._id) filter.semester = semesterDoc._id;
-    else if (semester) filter.semester = semester; // por si ya venía en query
+    const enrolledCourseIds = Array.from(enrolledCourseIdsSet);
+
+    // Si el alumno no lleva ningún curso (teoría) en este semestre => no hay labs que mostrar
+    if (enrolledCourseIds.length === 0) {
+      return res.json({
+        labEnrollmentStatus,
+        labEnrollmentWindow,
+        labGroups: [],
+        studentSchedule,
+        enrolledCourseIds,
+      });
+    }
+
+    // 3) Obtener grupos de laboratorio SOLO de cursos que el alumno lleva
+    const filter = {
+      type: 'lab',
+      semester: semesterDoc._id,
+      course: { $in: enrolledCourseIds },
+    };
+
+    // Si viene ?course=... (por ejemplo para filtrar desde front),
+    // lo respetamos solo si ese curso está dentro de los que lleva el alumno.
+    if (course) {
+      const cStr = String(course);
+      if (!enrolledCourseIdsSet.has(cStr)) {
+        // curso pedido no pertenece al alumno => devolvemos vacío (no filtramos “hacia afuera”)
+        return res.json({
+          labEnrollmentStatus,
+          labEnrollmentWindow,
+          labGroups: [],
+          studentSchedule,
+          enrolledCourseIds,
+        });
+      }
+      filter.course = cStr;
+    }
 
     const groups = await Section.find(filter)
       .populate('teacher', 'name email')
@@ -134,6 +186,7 @@ export const listLabGroups = async (req, res) => {
       const schedule = Array.isArray(g.schedule) ? g.schedule : [];
 
       let hasScheduleConflict = false;
+
       for (const labSlot of schedule) {
         const labDay = labSlot.day;
         const labStart = labSlot.startHour;
@@ -153,7 +206,6 @@ export const listLabGroups = async (req, res) => {
         if (hasScheduleConflict) break;
       }
 
-      // disponible = no tiene cruce y la fase está abierta
       const isAvailable = !hasScheduleConflict && labEnrollmentStatus === 'open';
 
       return {
@@ -165,11 +217,11 @@ export const listLabGroups = async (req, res) => {
 
     // 5) Respuesta unificada para el front
     return res.json({
-      labEnrollmentStatus,   // 'not_started' | 'open' | 'processed'
-      labEnrollmentWindow,   // { opensAt, closesAt } (pueden ser null)
+      labEnrollmentStatus,
+      labEnrollmentWindow,
       labGroups: enrichedGroups,
-      // opcional: si quieres que el front también dibuje o debuggee el horario
       studentSchedule,
+      enrolledCourseIds, 
     });
   } catch (error) {
     console.error('Error en listLabGroups:', error);

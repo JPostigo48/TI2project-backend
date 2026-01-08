@@ -119,7 +119,7 @@ export const getMyCourses = async (req, res) => {
       }
     }
 
-    console.log(rray.from(map.values()))
+    console.log(Array.from(map.values()))
 
     return res.json(Array.from(map.values()));
   } catch (err) {

@@ -8,7 +8,7 @@ const roomSchema = new mongoose.Schema(
     location: { type: String, required: true }, // Ej: "Piso 2"
     type: { 
         type: String, 
-        enum: ['theory', 'lab', 'auditorium'], 
+        enum: ['theory', 'lab'], 
         default: 'theory' 
     }
   },

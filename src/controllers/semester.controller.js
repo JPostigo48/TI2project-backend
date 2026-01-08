@@ -359,77 +359,306 @@ export const processLabEnrollment = async (req, res) => {
 
     if (semester.labEnrollment.status !== "processing") {
       return res.status(400).json({
-        message: `El semestre no está listo para procesar. Estado actual: "${semester.labEnrollment.status}".`
+        message: `El semestre no está listo para procesar. Estado actual: "${semester.labEnrollment.status}".`,
       });
     }
 
-    // ===============================================
-    // OBTENER ENROLLMENTS TEORÍA CON PREFERENCIAS
-    // ===============================================
+    // =====================================================
+    // Helpers
+    // =====================================================
+    const hasOverlap = (aStart, aEnd, bStart, bEnd) => !(aEnd < bStart || aStart > bEnd);
+
+    const hasScheduleConflict = (labSection, studentSlots) => {
+      if (!Array.isArray(labSection.schedule) || !Array.isArray(studentSlots)) return false;
+
+      for (const labSlot of labSection.schedule) {
+        const labDay = labSlot.day;
+        const labStart = labSlot.startHour;
+        const labEnd = labSlot.startHour + (labSlot.duration || 1) - 1;
+
+        for (const slot of studentSlots) {
+          if (slot.day !== labDay) continue;
+          const sStart = slot.startHour;
+          const sEnd = slot.startHour + (slot.duration || 1) - 1;
+
+          if (hasOverlap(labStart, labEnd, sStart, sEnd)) return true;
+        }
+      }
+      return false;
+    };
+
+    // Para ordenar grupos tipo "A","B","C" o "01","02" en orden DESC (C,B,A o 03,02,01)
+    const groupToRank = (g) => {
+      if (!g) return -1;
+      const s = String(g).trim().toUpperCase();
+
+      // numérico (01,02,10)
+      if (/^\d+$/.test(s)) return Number(s);
+
+      // alfabético simple (A,B,C,...)
+      if (/^[A-Z]$/.test(s)) return s.charCodeAt(0) - 64; // A=1, B=2...
+
+      // fallback: usar primera letra si existe
+      const ch = s[0];
+      if (ch >= "A" && ch <= "Z") return ch.charCodeAt(0) - 64;
+
+      return 0;
+    };
+
+    // =====================================================
+    // 1) Traer TODOS los labs del semestre (para defaults)
+    // =====================================================
+    const labSections = await Section.find({
+      semester: semesterId,
+      type: "lab",
+    }).lean();
+
+    // Map courseId -> labs[]
+    const labsByCourse = new Map();
+    for (const lab of labSections) {
+      const courseId = lab.course?.toString();
+      if (!courseId) continue;
+      if (!labsByCourse.has(courseId)) labsByCourse.set(courseId, []);
+      labsByCourse.get(courseId).push(lab);
+    }
+
+    // Orden default invertido por grupo (C,B,A o 03,02,01)
+    for (const [courseId, labs] of labsByCourse.entries()) {
+      labs.sort((a, b) => groupToRank(b.group) - groupToRank(a.group));
+      labsByCourse.set(courseId, labs);
+    }
+
+    // =====================================================
+    // 2) Traer TODOS los enrollments de TEORÍA del semestre
+    //    (incluye los que NO tienen preferencias)
+    // =====================================================
     const theoryEnrollments = await Enrollment.find({
       semester: semesterId,
-      labPreferences: { $exists: true, $not: { $size: 0 } }
+      status: { $ne: "dropped" },
     })
-      .populate("section") // sección teoría
-      .populate("labPreferences"); // secciones lab
+      .populate({
+        path: "section",
+        select: "type course schedule",
+        populate: { path: "course", select: "name code" },
+      })
+      .populate("labPreferences") // puede venir vacío
+      .lean();
 
-    // Aqui guardarás los resultados
-    const assignments = [];
+    // Filtrar solo teoría (porque preferencias viven en enrollment de teoría)
+    const onlyTheory = theoryEnrollments.filter((enr) => enr.section?.type === "theory");
 
-    // ===============================================
-    // EJECUTAR EL GREEDY (PLANTILLA)
-    // ===============================================
-    for (const enr of theoryEnrollments) {
-      const prefs = enr.labPreferences;
+    if (onlyTheory.length === 0) {
+      semester.labEnrollment.status = "processed";
+      semester.labEnrollment.processedAt = new Date();
+      await semester.save();
 
-      let assigned = null;
+      return res.json({
+        message: "No hay matrículas de teoría para procesar.",
+        assignmentsCount: 0,
+        assignments: [],
+      });
+    }
 
-      for (const labSec of prefs) {
-        if (labSec.enrolledCount < labSec.capacity) {
-          assigned = labSec;
-          break;
+    // =====================================================
+    // 3) Construir horario base por alumno (solo teoría)
+    //    + lo iremos extendiendo con labs asignados en este mismo proceso
+    // =====================================================
+    const scheduleByStudent = new Map(); // studentId -> slots[]
+    const courseByEnrollment = new Map(); // enrollmentId -> courseId
+
+    for (const enr of onlyTheory) {
+      const studentId = enr.student?.toString();
+      if (!studentId) continue;
+
+      if (!scheduleByStudent.has(studentId)) scheduleByStudent.set(studentId, []);
+
+      // meter horarios de teoría
+      const sec = enr.section;
+      if (Array.isArray(sec?.schedule)) {
+        for (const b of sec.schedule) {
+          if (!b) continue;
+          scheduleByStudent.get(studentId).push({
+            day: b.day,
+            startHour: b.startHour,
+            duration: b.duration || 1,
+          });
         }
       }
 
-      if (assigned) {
-        assignments.push({ student: enr.student, labSection: assigned._id });
-
-        // incrementar contador
-        await Section.findByIdAndUpdate(assigned._id, {
-          $inc: { enrolledCount: 1 }
-        });
-
-        // crear enrollment de laboratorio
-        await Enrollment.create({
-          student: enr.student,
-          section: assigned._id,
-          semester: semesterId,
-          status: "enrolled"
-        });
-      }
+      const courseId = sec?.course?._id?.toString() || sec?.course?.toString();
+      if (courseId) courseByEnrollment.set(enr._id.toString(), courseId);
     }
 
-    // ===============================================
-    // ACTUALIZAR ESTADO DEL SEMESTRE
-    // ===============================================
+    // =====================================================
+    // 4) Para evitar duplicados: traer labs ya matriculados
+    //    (por preprocess o ejecuciones previas)
+    // =====================================================
+    const alreadyLabEnrollments = await Enrollment.find({
+      semester: semesterId,
+      status: { $ne: "dropped" },
+    })
+      .populate({ path: "section", select: "type course" })
+      .lean();
+
+    // Map studentId -> Set(courseId) ya tiene lab
+    const studentHasLabCourse = new Map();
+    for (const enr of alreadyLabEnrollments) {
+      if (enr.section?.type !== "lab") continue;
+      const studentId = enr.student?.toString();
+      const courseId = enr.section?.course?.toString();
+      if (!studentId || !courseId) continue;
+
+      if (!studentHasLabCourse.has(studentId)) studentHasLabCourse.set(studentId, new Set());
+      studentHasLabCourse.get(studentId).add(courseId);
+    }
+
+    // =====================================================
+    // 5) Procesar asignación:
+    //    - si tiene preferencias: esas primero
+    //    - si NO tiene preferencias: default invertido (C,B,A)
+    // =====================================================
+    const assignments = [];
+    let assignedCount = 0;
+
+    for (const enr of onlyTheory) {
+      const studentId = enr.student?.toString();
+      if (!studentId) continue;
+
+      const courseId = courseByEnrollment.get(enr._id.toString());
+      if (!courseId) continue;
+
+      const labsForCourse = labsByCourse.get(courseId);
+      if (!labsForCourse || labsForCourse.length === 0) {
+        continue; // curso sin lab
+      }
+
+      // si ya tiene lab matriculado para este curso, saltar
+      const hasSet = studentHasLabCourse.get(studentId);
+      if (hasSet && hasSet.has(courseId)) continue;
+
+      // preferencias del alumno (si existen)
+      const prefs = Array.isArray(enr.labPreferences) ? enr.labPreferences : [];
+      const hasPrefs = prefs.length > 0;
+
+      // construir lista de candidatos (preferencias o default)
+      let candidates = [];
+      if (hasPrefs) {
+        // preferences vienen como docs -> convertir a ids y filtrar los que realmente son labs de este curso/semestre
+        const prefIds = prefs
+          .map((x) => (x?._id ? x._id.toString() : x?.toString()))
+          .filter(Boolean);
+
+        // map rápido id -> lab
+        const labById = new Map(labsForCourse.map((l) => [l._id.toString(), l]));
+        candidates = prefIds.map((id) => labById.get(id)).filter(Boolean);
+      } else {
+        // DEFAULT: orden invertido (ya está ordenado labsForCourse DESC)
+        candidates = labsForCourse;
+      }
+
+      // validar conflicto + capacidad
+      const studentSlots = scheduleByStudent.get(studentId) || [];
+      let assignedLab = null;
+
+      for (const labSec of candidates) {
+        if (!labSec) continue;
+
+        const hasCapacity =
+          typeof labSec.capacity === "number" && typeof labSec.enrolledCount === "number"
+            ? labSec.enrolledCount < labSec.capacity
+            : true;
+
+        if (!hasCapacity) continue;
+
+        const conflict = hasScheduleConflict(labSec, studentSlots);
+        if (conflict) continue;
+
+        assignedLab = labSec;
+        break;
+      }
+
+      if (!assignedLab) {
+        // No se pudo asignar nada (por cruces/capacidad)
+        continue;
+      }
+
+      // Doble check: por si en paralelo ya se creó
+      const exists = await Enrollment.findOne({
+        student: studentId,
+        semester: semesterId,
+        section: assignedLab._id,
+        status: { $ne: "dropped" },
+      }).lean();
+
+      if (exists) {
+        // Marcar que ya tiene lab del curso para evitar repetir
+        if (!studentHasLabCourse.has(studentId)) studentHasLabCourse.set(studentId, new Set());
+        studentHasLabCourse.get(studentId).add(courseId);
+        continue;
+      }
+
+      // Crear enrollment de lab
+      await Enrollment.create({
+        student: studentId,
+        section: assignedLab._id,
+        semester: semesterId,
+        status: "enrolled",
+      });
+
+      // Incrementar contador
+      await Section.findByIdAndUpdate(assignedLab._id, { $inc: { enrolledCount: 1 } });
+
+      // Actualizar el enrolledCount local para que el siguiente estudiante vea la capacidad real
+      assignedLab.enrolledCount = (assignedLab.enrolledCount || 0) + 1;
+
+      // Agregar slots del lab al horario del estudiante (para evitar cruces entre labs de distintos cursos)
+      if (Array.isArray(assignedLab.schedule)) {
+        for (const b of assignedLab.schedule) {
+          studentSlots.push({
+            day: b.day,
+            startHour: b.startHour,
+            duration: b.duration || 1,
+          });
+        }
+      }
+      scheduleByStudent.set(studentId, studentSlots);
+
+      // marcar curso como ya asignado
+      if (!studentHasLabCourse.has(studentId)) studentHasLabCourse.set(studentId, new Set());
+      studentHasLabCourse.get(studentId).add(courseId);
+
+      assignedCount++;
+      assignments.push({
+        student: studentId,
+        course: courseId,
+        labSection: assignedLab._id,
+        usedDefaultPreferences: !hasPrefs,
+        chosenGroup: assignedLab.group,
+      });
+    }
+
+    // =====================================================
+    // 6) Marcar semestre como processed
+    // =====================================================
     semester.labEnrollment.status = "processed";
     semester.labEnrollment.processedAt = new Date();
     await semester.save();
 
     return res.json({
-      message: "Procesamiento completado.",
+      message:
+        "Procesamiento completado. Se asignaron labs usando preferencias del alumno o defaults invertidos (C→B→A) cuando no existían.",
       assignmentsCount: assignments.length,
-      assignments
+      assignments,
     });
-
   } catch (error) {
     console.error("Error en processLabEnrollment:", error);
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al procesar matrícula de laboratorios.",
-      error: error.message
+      error: error.message,
     });
   }
 };
+
 
 
 export const getLabEnrollmentResults = async (req, res) => {
